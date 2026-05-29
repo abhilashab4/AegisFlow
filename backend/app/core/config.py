@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
 
-    GROQ_API_KEY: str   # ✅ FIXED
+    GROQ_API_KEY: str  
 
     DATABASE_URL: str
     REDIS_URL: str

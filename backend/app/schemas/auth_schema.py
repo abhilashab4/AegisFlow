@@ -9,7 +9,6 @@ class TokenResponse(BaseModel):
     token_type: str
 
 class UserContext(BaseModel):
-    """Represents the identity and organizational context of the user."""
     username: str
     role: str
     dept: str

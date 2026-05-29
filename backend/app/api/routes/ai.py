@@ -1,60 +1,285 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
-from app.api.dependencies.auth_dependency import get_current_user
-from app.schemas.chat_schema import ChatRequest
-from app.schemas.auth_schema import UserContext
-from app.services.pii_service import sanitize_text
-from app.services.llm_service import generate_llm_response
-from app.services.guardrail_service import check_output_guardrails
-from app.services.audit_logger import log_request
 
-router = APIRouter(prefix="/ai", tags=["AI Gateway"])
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status
+)
+
+from app.api.dependencies.auth_dependency import (
+    get_current_user
+)
+
+from app.schemas.chat_schema import (
+    ChatRequest
+)
+
+from app.schemas.auth_schema import (
+    UserContext
+)
+
+from backend.app.services.pii.pii_service import (
+    PIIPipeline
+)
+
+from app.services.providers.provider_router import (
+    ProviderRouter
+)
+
+from app.services.guardrails.output_guardrail import (
+    OutputGuardrail
+)
+
+from app.services.schema_validator import (
+    validate_llm_response
+)
+
+from app.services.audits.audit_logger import (
+    AuditLogger
+)
+
+
+router = APIRouter(
+    prefix="/ai",
+    tags=["AI Gateway"]
+)
+
+
+provider_router = ProviderRouter()
+
+guardrail = OutputGuardrail()
+
+audit_logger = AuditLogger()
+
+pii_pipeline = PIIPipeline()
+
 
 @router.post("/generate")
 async def generate(
     data: ChatRequest,
-    current_user: UserContext = Depends(get_current_user)
+    current_user: UserContext = Depends(
+        get_current_user
+    )
 ):
+
     request_id = str(uuid.uuid4())
-    sanitized_prompt = None 
-    
+
+    sanitized_prompt = None
+
     log_base = {
-        "request_id": request_id,
-        "username": current_user.username,
-        "role": current_user.role,
-        "dept": current_user.dept,
-        "original_prompt": data.prompt
+
+        "request_id":
+            request_id,
+
+        "username":
+            current_user.username,
+
+        "role":
+            current_user.role,
+
+        "department":
+            current_user.dept,
+
+        "original_prompt":
+            data.prompt
     }
 
     try:
-        pii_input = await sanitize_text(data.prompt)
-        sanitized_prompt = pii_input["sanitized_text"]
 
-        llm_response = await generate_llm_response(sanitized_prompt)
 
-        pii_output = await sanitize_text(llm_response)
-        final_response = pii_output["sanitized_text"]
+        pii_result = (
+            pii_pipeline.sanitize_prompt(
+                data.prompt
+            )
+        )
 
-        guard_result = await check_output_guardrails(final_response)
 
-        if not guard_result["safe"]:
-            await log_request({**log_base, "blocked": True, "reason": guard_result["reason"]})
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Compliance Violation: {guard_result['reason']}"
+        if not pii_result["safe"]:
+
+            audit_logger.log_event(
+
+                event_type=
+                    "PII_VERIFICATION_FAILURE",
+
+                actor=
+                    current_user.username,
+
+                metadata={
+                    **log_base,
+                    "reason":
+                        pii_result["reason"]
+                }
             )
 
-        await log_request({**log_base,"sanitized_prompt": sanitized_prompt, "blocked": False, "status": "success"})
+            raise HTTPException(
 
-        return {
-            "request_id": request_id,
-            "response": final_response,
-            "sanitized_prompt": sanitized_prompt
+                status_code=
+                    status.HTTP_400_BAD_REQUEST,
+
+                detail=
+                    pii_result["reason"]
+            )
+
+        sanitized_prompt = (
+            pii_result["sanitized_text"]
+        )
+
+
+        llm_response = await (
+            provider_router.generate(
+                prompt=sanitized_prompt
+            )
+        )
+
+        guard_result = (
+            guardrail.validate(
+                llm_response
+            )
+        )
+
+        if not guard_result["safe"]:
+
+            audit_logger.log_event(
+
+                event_type=
+                    "POLICY_VIOLATION",
+
+                actor=
+                    current_user.username,
+
+                metadata={
+                    **log_base,
+                    "blocked": True,
+                    "reason":
+                        guard_result[
+                            "reason"
+                        ]
+                }
+            )
+
+            raise HTTPException(
+
+                status_code=
+                    status.HTTP_403_FORBIDDEN,
+
+                detail=(
+                    "Compliance violation: "
+                    f"{guard_result['reason']}"
+                )
+            )
+
+
+        structured_response = {
+
+            "status":
+                "success",
+
+            "response":
+                llm_response,
+
+            "model":
+                "llama-3.1-8b-instant"
         }
 
+        schema_result = (
+            validate_llm_response(
+                structured_response
+            )
+        )
+
+        if not schema_result["valid"]:
+
+            audit_logger.log_event(
+
+                event_type=
+                    "SCHEMA_FAILURE",
+
+                actor=
+                    current_user.username,
+
+                metadata={
+                    **log_base,
+                    "errors":
+                        schema_result[
+                            "errors"
+                        ]
+                }
+            )
+
+            raise HTTPException(
+
+                status_code=
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+
+                detail=
+                    "Schema validation failed"
+            )
+
+        audit_logger.log_event(
+
+            event_type=
+                "LLM_REQUEST",
+
+            actor=
+                current_user.username,
+
+            metadata={
+                **log_base,
+
+                "sanitized_prompt":
+                    sanitized_prompt,
+
+                "blocked":
+                    False
+            }
+        )
+
+
+        final_response = {
+
+            "request_id":
+                request_id,
+
+            "status":
+                "success",
+
+            "sanitized_prompt":
+                sanitized_prompt,
+
+            "response":
+                llm_response
+        }
+
+        return final_response
+
+
+    except HTTPException as http_error:
+
+        raise
+
+
     except Exception as e:
-        await log_request({**log_base, "sanitized_prompt": sanitized_prompt, "error": str(e), "status": "system_failure"})
+
+        audit_logger.log_event(
+
+            event_type=
+                "SYSTEM_FAILURE",
+
+            actor=
+                current_user.username,
+
+            metadata={
+                **log_base,
+                "error": str(e)
+            }
+        )
+
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Internal gateway processing error"
+
+            status_code=
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+
+            detail=
+                "Internal gateway error"
         )
