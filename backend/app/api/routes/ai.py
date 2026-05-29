@@ -19,7 +19,7 @@ from app.schemas.auth_schema import (
     UserContext
 )
 
-from backend.app.services.pii.pii_service import (
+from app.services.pii.pii_service import (
     PIIPipeline
 )
 
