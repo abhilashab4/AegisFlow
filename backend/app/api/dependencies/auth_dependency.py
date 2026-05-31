@@ -8,13 +8,16 @@ from app.models.user import User
 
 security = HTTPBearer()
 
+from sqlalchemy import select
+from app.db.session import AsyncSessionLocal
+from app.models.user import User
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> UserContext:
 
     token = credentials.credentials
-
     payload = verify_access_token(token)
 
     if payload is None:
@@ -31,11 +34,13 @@ async def get_current_user(
             detail="Token missing user identity"
         )
 
-    db = AsyncSessionLocal()
+    async with AsyncSessionLocal() as db:
 
-    user = db.query(User).filter(
-        User.id == user_id
-    ).first()
+        result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+
+        user = result.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
@@ -48,7 +53,6 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account disabled"
         )
-
 
     return UserContext(
         user_id=user.id,

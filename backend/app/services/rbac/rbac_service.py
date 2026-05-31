@@ -1,17 +1,26 @@
-from app.services.rbac.policy_engine import PolicyEngine
+from app.services.rbac.policy_engine import (
+    PolicyEngine
+)
 
 policy_engine = PolicyEngine()
 
 
-def check_access(user_context, endpoint: str, model: str):
+def check_access(
+    user_context,
+    endpoint: str,
+    task: str
+):
 
-    allowed, reason = policy_engine.is_allowed(
-        role=user_context.role,
-        endpoint=endpoint,
-        model=model
+    allowed, reason, model = (
+        policy_engine.is_allowed(
+            role=user_context.role,
+            endpoint=endpoint,
+            task=task
+        )
     )
 
     return {
         "allowed": allowed,
-        "reason": reason
+        "reason": reason,
+        "model": model
     }

@@ -42,6 +42,7 @@ async def register(data: RegisterRequest):
 
 
         new_user = User(
+            
 
             username=data.username,
 
@@ -68,7 +69,7 @@ async def register(data: RegisterRequest):
             "username":
                 new_user.username
         }
-
+    
 @router.post(
     "/login",
     response_model=TokenResponse,
@@ -79,16 +80,12 @@ async def login(data: LoginRequest):
     async with AsyncSessionLocal() as db:
 
         result = await db.execute(
-
-            select(User).where(
-                User.username == data.username
-            )
+            select(User).where(User.username == data.username)
         )
 
         user = result.scalar_one_or_none()
 
         if not user:
-
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
@@ -98,32 +95,21 @@ async def login(data: LoginRequest):
             data.password,
             user.password_hash
         ):
-
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
             )
 
         access_token = create_access_token(
-
             data={
-
-                "sub":
-                    user.username,
-
-                "role":
-                    user.role,
-
-                "dept":
-                    user.department
+                "user_id": user.id,          # ✅ FIX
+                "username": user.username,
+                "role": user.role,
+                "dept": user.department
             }
         )
 
         return {
-
-            "access_token":
-                access_token,
-
-            "token_type":
-                "bearer"
+            "access_token": access_token,
+            "token_type": "bearer"
         }

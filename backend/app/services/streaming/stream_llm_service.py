@@ -12,18 +12,16 @@ validator = StreamValidator()
 
 
 async def stream_llm_response(
-    prompt: str
+    prompt: str,
+    model: str = None
 ):
-
-    stream = await (
-        provider_router.stream_generate(
-            prompt=prompt
-        )
-    )
 
     buffer = ""
 
-    async for chunk in stream:
+    async for chunk in provider_router.stream_generate(
+        prompt=prompt,
+        model=model
+    ):
 
         if not chunk:
             continue
@@ -32,10 +30,8 @@ async def stream_llm_response(
 
         if len(buffer) >= 256:
 
-            validation = (
-                validator.validate_chunk(
-                    buffer
-                )
+            validation = validator.validate_chunk(
+                buffer
             )
 
             if not validation["safe"]:
@@ -52,13 +48,10 @@ async def stream_llm_response(
 
         yield chunk
 
-
     if buffer:
 
-        validation = (
-            validator.validate_chunk(
-                buffer
-            )
+        validation = validator.validate_chunk(
+            buffer
         )
 
         if not validation["safe"]:

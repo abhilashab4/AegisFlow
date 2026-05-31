@@ -141,9 +141,12 @@ async def generate(
 
         #RBAC check
         rbac_result = check_access(
+
             user_context=current_user,
+
             endpoint="/ai/generate",
-            model="llama-3.1-8b-instant"
+
+            task=data.task
         )
 
         if not rbac_result["allowed"]:
@@ -162,11 +165,19 @@ async def generate(
                 detail=f"Access denied: {rbac_result['reason']}"
             )
 
+        selected_model = (
+            rbac_result["model"]
+        )
+
+        print(
+            f"DEBUG: Selected Model = {selected_model}"
+        )
 
         #LLM call
         llm_response = await (
             provider_router.generate(
-                prompt=sanitized_prompt
+                prompt=sanitized_prompt,
+                model=selected_model
             )
         )
 
@@ -361,7 +372,7 @@ async def generate_stream(
 
         endpoint="/ai/generate-stream",
 
-        model="llama-3.1-8b-instant"
+        task=data.task
     )
 
     if not rbac_result["allowed"]:
@@ -377,7 +388,8 @@ async def generate_stream(
     return StreamingResponse(
 
         stream_llm_response(
-            sanitized_prompt
+            sanitized_prompt,
+            rbac_result["model"]
         ),
 
         media_type=

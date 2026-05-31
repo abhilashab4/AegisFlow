@@ -9,7 +9,7 @@ class TokenResponse(BaseModel):
     token_type: str
 
 class UserContext(BaseModel):
-    user_id: str
+    user_id: int
     username: str
     role: str
     dept: str

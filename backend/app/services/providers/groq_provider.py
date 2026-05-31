@@ -1,4 +1,3 @@
-
 from groq import AsyncGroq
 
 from app.core.config import settings
@@ -18,18 +17,16 @@ class GroqProvider(
             api_key=settings.GROQ_API_KEY
         )
 
-        self.model = (
-            "llama-3.1-8b-instant"
-        )
-
     async def generate(
         self,
-        prompt: str
+        prompt: str,
+        model: str
     ):
 
         response = await (
             self.client.chat.completions.create(
-                model=self.model,
+
+                model=model,
 
                 messages=[
                     {
@@ -56,13 +53,14 @@ class GroqProvider(
 
     async def stream_generate(
         self,
-        prompt: str
+        prompt: str,
+        model: str
     ):
 
         stream = await (
             self.client.chat.completions.create(
 
-                model=self.model,
+                model=model,
 
                 messages=[
                     {
