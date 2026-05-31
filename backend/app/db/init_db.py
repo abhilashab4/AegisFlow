@@ -5,7 +5,7 @@ from app.db.base import Base
 
 from app.models.user import User
 from app.models.audit_log import AuditLog
-
+from app.models.usage_log import UsageLog
 
 async def init_db():
 

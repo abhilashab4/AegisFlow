@@ -1,397 +1,205 @@
 import uuid
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    status
-)
+from app.api.dependencies.auth_dependency import get_current_user
+from app.schemas.chat_schema import ChatRequest
+from app.schemas.auth_schema import UserContext
+from app.db.session import AsyncSessionLocal
 
-from app.api.dependencies.auth_dependency import (
-    get_current_user
-)
-
-from app.schemas.chat_schema import (
-    ChatRequest
-)
-
-from app.schemas.auth_schema import (
-    UserContext
-)
-
-from app.services.pii.pii_service import (
-    PIIPipeline
-)
-
-from app.services.providers.provider_router import (
-    ProviderRouter
-)
-
-from app.services.guardrails.output_guardrail import (
-    OutputGuardrail
-)
-
-from app.services.schema_validator import (
-    validate_llm_response
-)
-
-from app.services.audits.audit_logger import (
-    AuditLogger
-)
-
-from app.services.rbac.rbac_service import (
-    check_access
-)
-
-from fastapi.responses import (
-    StreamingResponse
-)
-
-from app.services.streaming.stream_llm_service import (
-    stream_llm_response
-)
-
-
+from app.services.pii.pii_service import PIIPipeline
+from app.services.providers.provider_router import ProviderRouter
+from app.services.guardrails.output_guardrail import OutputGuardrail
+from app.services.schema_validator import validate_llm_response
+from app.services.audits.audit_logger import AuditLogger
+from app.services.rbac.rbac_service import check_access
+from app.services.streaming.stream_llm_service import stream_llm_response
+from app.services.cost.cost_calculator import estimate_cost
+from app.services.cost.usage_tracker import log_usage
 
 router = APIRouter(
     prefix="/ai",
     tags=["AI Gateway"]
 )
 
-
 provider_router = ProviderRouter()
-
 guardrail = OutputGuardrail()
-
 audit_logger = AuditLogger()
-
 pii_pipeline = PIIPipeline()
+
+
+def _verify_and_sanitize_pii(prompt: str, current_user: UserContext, log_base: Dict[str, Any]) -> str:
+    pii_result = pii_pipeline.sanitize_prompt(prompt)
+    if not pii_result["safe"]:
+        audit_logger.log_event(
+            event_type="PII_VERIFICATION_FAILURE",
+            actor=current_user.username,
+            metadata={**log_base, "reason": pii_result["reason"]}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=pii_result["reason"]
+        )
+    return pii_result["sanitized_text"]
+
+
+def _verify_rbac_access(current_user: UserContext, endpoint: str, task: str, log_base: Dict[str, Any]) -> Dict[str, Any]:
+    rbac_result = check_access(
+        user_context=current_user,
+        endpoint=endpoint,
+        task=task
+    )
+    if not rbac_result["allowed"]:
+        audit_logger.log_event(
+            event_type="RBAC_BLOCK",
+            actor=current_user.username,
+            metadata={**log_base, "reason": rbac_result["reason"]}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: {rbac_result['reason']}"
+        )
+    return rbac_result
+
+
+def _validate_output_guardrails(llm_response: str, current_user: UserContext, log_base: Dict[str, Any]) -> None:
+    guard_result = guardrail.validate(llm_response)
+    if not guard_result["safe"]:
+        audit_logger.log_event(
+            event_type="POLICY_VIOLATION",
+            actor=current_user.username,
+            metadata={**log_base, "blocked": True, "reason": guard_result["reason"]}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Compliance violation: {guard_result['reason']}"
+        )
+
+
+def _validate_response_schema(structured_response: Dict[str, Any], current_user: UserContext, log_base: Dict[str, Any]) -> None:
+    schema_result = validate_llm_response(structured_response)
+    if not schema_result["valid"]:
+        audit_logger.log_event(
+            event_type="SCHEMA_FAILURE",
+            actor=current_user.username,
+            metadata={**log_base, "errors": schema_result["errors"]}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Schema validation failed"
+        )
 
 
 @router.post("/generate")
 async def generate(
     data: ChatRequest,
-    current_user: UserContext = Depends(
-        get_current_user
-    )
+    current_user: UserContext = Depends(get_current_user)
 ):
-
     request_id = str(uuid.uuid4())
-
-    sanitized_prompt = None
-
     log_base = {
-
-        "request_id":
-            request_id,
-
-        "username":
-            current_user.username,
-
-        "role":
-            current_user.role,
-
-        "department":
-            current_user.dept,
-
-        "original_prompt":
-            data.prompt
+        "request_id": request_id,
+        "username": current_user.username,
+        "role": current_user.role,
+        "department": current_user.dept,
+        "original_prompt": data.prompt
     }
 
     try:
+        sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_base)
+        rbac_result = _verify_rbac_access(current_user, "/ai/generate", data.task, log_base)
+        
+        selected_model = rbac_result["model"]
+        provider_name = provider_router.resolve_provider(selected_model)
+        print(f"DEBUG: Selected Model = {selected_model}")
 
-
-        pii_result = (
-            pii_pipeline.sanitize_prompt(
-                data.prompt
-            )
+        llm_response = await provider_router.generate(
+            prompt=sanitized_prompt,
+            model=selected_model
         )
 
-
-        if not pii_result["safe"]:
-
-            audit_logger.log_event(
-
-                event_type=
-                    "PII_VERIFICATION_FAILURE",
-
-                actor=
-                    current_user.username,
-
-                metadata={
-                    **log_base,
-                    "reason":
-                        pii_result["reason"]
-                }
-            )
-
-            raise HTTPException(
-
-                status_code=
-                    status.HTTP_400_BAD_REQUEST,
-
-                detail=
-                    pii_result["reason"]
-            )
-
-        sanitized_prompt = (
-            pii_result["sanitized_text"]
+        prompt_tokens = len(sanitized_prompt.split())
+        completion_tokens = len(llm_response.split())
+        cost = estimate_cost(
+            model=selected_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens
         )
 
-
-        #RBAC check
-        rbac_result = check_access(
-
-            user_context=current_user,
-
-            endpoint="/ai/generate",
-
-            task=data.task
-        )
-
-        if not rbac_result["allowed"]:
-
-            audit_logger.log_event(
-                event_type="RBAC_BLOCK",
-                actor=current_user.username,
-                metadata={
-                    **log_base,
-                    "reason": rbac_result["reason"]
-                }
-            )
-
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied: {rbac_result['reason']}"
-            )
-
-        selected_model = (
-            rbac_result["model"]
-        )
-
-        print(
-            f"DEBUG: Selected Model = {selected_model}"
-        )
-
-        #LLM call
-        llm_response = await (
-            provider_router.generate(
-                prompt=sanitized_prompt,
-                model=selected_model
-            )
-        )
-
-        guard_result = (
-            guardrail.validate(
-                llm_response
-            )
-        )
-
-        if not guard_result["safe"]:
-
-            audit_logger.log_event(
-
-                event_type=
-                    "POLICY_VIOLATION",
-
-                actor=
-                    current_user.username,
-
-                metadata={
-                    **log_base,
-                    "blocked": True,
-                    "reason":
-                        guard_result[
-                            "reason"
-                        ]
-                }
-            )
-
-            raise HTTPException(
-
-                status_code=
-                    status.HTTP_403_FORBIDDEN,
-
-                detail=(
-                    "Compliance violation: "
-                    f"{guard_result['reason']}"
-                )
-            )
-
+        _validate_output_guardrails(llm_response, current_user, log_base)
 
         structured_response = {
-
-            "status":
-                "success",
-
-            "response":
-                llm_response,
-
-            "model":
-                "llama-3.1-8b-instant"
+            "status": "success",
+            "response": llm_response,
+            "model": "llama-3.1-8b-instant"
         }
-
-        schema_result = (
-            validate_llm_response(
-                structured_response
-            )
-        )
-
-        if not schema_result["valid"]:
-
-            audit_logger.log_event(
-
-                event_type=
-                    "SCHEMA_FAILURE",
-
-                actor=
-                    current_user.username,
-
-                metadata={
-                    **log_base,
-                    "errors":
-                        schema_result[
-                            "errors"
-                        ]
-                }
+        
+        async with AsyncSessionLocal() as db:
+            await log_usage(
+                db=db,
+                username=current_user.username,
+                role=current_user.role,
+                department=current_user.dept,
+                model=selected_model,
+                provider=provider_name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost=cost
             )
 
-            raise HTTPException(
-
-                status_code=
-                    status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-                detail=
-                    "Schema validation failed"
-            )
+        _validate_response_schema(structured_response, current_user, log_base)
 
         audit_logger.log_event(
-
-            event_type=
-                "LLM_REQUEST",
-
-            actor=
-                current_user.username,
-
+            event_type="LLM_REQUEST",
+            actor=current_user.username,
             metadata={
                 **log_base,
-
-                "sanitized_prompt":
-                    sanitized_prompt,
-
-                "blocked":
-                    False
+                "sanitized_prompt": sanitized_prompt,
+                "blocked": False
             }
         )
 
-
-        final_response = {
-
-            "request_id":
-                request_id,
-
-            "status":
-                "success",
-
-            "sanitized_prompt":
-                sanitized_prompt,
-
-            "response":
-                llm_response
+        return {
+            "request_id": request_id,
+            "status": "success",
+            "model": selected_model,
+            "provider": provider_name,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "estimated_cost": cost,
+            "sanitized_prompt": sanitized_prompt,
+            "response": llm_response
         }
-
-        return final_response
-
 
     except HTTPException as http_error:
-
-        raise
-
+        raise http_error
 
     except Exception as e:
-
         audit_logger.log_event(
-
-            event_type=
-                "SYSTEM_FAILURE",
-
-            actor=
-                current_user.username,
-
-            metadata={
-                **log_base,
-                "error": str(e)
-            }
+            event_type="SYSTEM_FAILURE",
+            actor=current_user.username,
+            metadata={**log_base, "error": str(e)}
         )
-
         raise HTTPException(
-
-            status_code=
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail=
-                "Internal gateway error"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal gateway error"
         )
-    
+
 
 @router.post("/generate-stream")
 async def generate_stream(
-
     data: ChatRequest,
-
-    current_user: UserContext = Depends(
-        get_current_user
-    )
+    current_user: UserContext = Depends(get_current_user)
 ):
+    log_context = {"username": current_user.username} 
 
-
-    pii_result = (
-        pii_pipeline.sanitize_prompt(
-            data.prompt
-        )
-    )
-
-    if not pii_result["safe"]:
-
-        raise HTTPException(
-
-            status_code=400,
-
-            detail=
-                pii_result["reason"]
-        )
-
-    sanitized_prompt = (
-        pii_result["sanitized_text"]
-    )
-
-
-    rbac_result = check_access(
-
-        user_context=current_user,
-
-        endpoint="/ai/generate-stream",
-
-        task=data.task
-    )
-
-    if not rbac_result["allowed"]:
-
-        raise HTTPException(
-
-            status_code=403,
-
-            detail=
-                rbac_result["reason"]
-        )
+    sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_context)
+    rbac_result = _verify_rbac_access(current_user, "/ai/generate-stream", data.task, log_context)
 
     return StreamingResponse(
-
         stream_llm_response(
             sanitized_prompt,
             rbac_result["model"]
         ),
-
-        media_type=
-            "text/plain"
+        media_type="text/plain"
     )
