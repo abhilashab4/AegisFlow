@@ -1,49 +1,72 @@
-from app.services.streaming.stream_validator import (
-    StreamValidator
-)
-
 from app.services.providers.provider_router import (
     ProviderRouter
 )
 
-
-validator = StreamValidator()
+from app.services.streaming.stream_validator import (
+    StreamValidator
+)
 
 provider_router = ProviderRouter()
 
+validator = StreamValidator()
 
-async def stream_llm_response(prompt: str):
 
-    accumulated_text = ""
+async def stream_llm_response(
+    prompt: str
+):
 
-    async for delta in (
+    stream = await (
         provider_router.stream_generate(
             prompt=prompt
         )
-    ):
+    )
 
-        if not delta:
+    buffer = ""
+
+    async for chunk in stream:
+
+        if not chunk:
             continue
 
-        accumulated_text += delta
+        buffer += chunk
 
+        if len(buffer) >= 256:
+
+            validation = (
+                validator.validate_chunk(
+                    buffer
+                )
+            )
+
+            if not validation["safe"]:
+
+                yield (
+                    "\n\n"
+                    "[STREAM TERMINATED: "
+                    "POLICY VIOLATION]"
+                )
+
+                return
+
+            buffer = ""
+
+        yield chunk
+
+
+    if buffer:
 
         validation = (
             validator.validate_chunk(
-                accumulated_text
+                buffer
             )
         )
-
 
         if not validation["safe"]:
 
             yield (
                 "\n\n"
                 "[STREAM TERMINATED: "
-                "POLICY VIOLATION DETECTED]"
+                "POLICY VIOLATION]"
             )
 
             return
-
-
-        yield delta
