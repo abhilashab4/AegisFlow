@@ -1,26 +1,48 @@
 class PolicyEngine:
 
     def __init__(self):
-
-        self.role_policies = {
-            "admin": {
-                "allowed_tasks": ["*"],
-                "allow_endpoints": ["*"]
+        self.department_policies = {
+            "engineering": {
+                "allowed_tasks": [
+                    "text-summarization",
+                    "data-extraction",
+                    "code-generation",
+                    "complex-reasoning"
+                ],
+                "allow_endpoints": [
+                    "/ai/generate",
+                    "/ai/generate-stream"
+                ],
+                "rate_limit_per_minute": 100
             },
-
-            "employee": {
-                "allowed_tasks": ["text-summarization", "data-extraction", "code-generation"],
-                "allow_endpoints": ["/ai/generate", "/ai/generate-stream"]
+            "finance": {
+                "allowed_tasks": [
+                    "text-summarization",
+                    "data-extraction"
+                ],
+                "allow_endpoints": [
+                    "/ai/generate"
+                ],
+                "rate_limit_per_minute": 50
             },
-
-            "analyst": {
-                "allowed_tasks": ["text-summarization", "complex-reasoning", "data-extraction"],
-                "allow_endpoints": ["/ai/generate"]
+            "hr": {
+                "allowed_tasks": [
+                    "text-summarization"
+                ],
+                "allow_endpoints": [
+                    "/ai/generate"
+                ],
+                "rate_limit_per_minute": 25
             },
-
-            "intern": {
-                "allowed_tasks": ["text-summarization"],
-                "allow_endpoints": ["/ai/generate"]
+            "compliance": {
+                "allowed_tasks": [
+                    "text-summarization",
+                    "complex-reasoning"
+                ],
+                "allow_endpoints": [
+                    "/ai/generate"
+                ],
+                "rate_limit_per_minute": 75
             }
         }
 
@@ -31,28 +53,26 @@ class PolicyEngine:
             "code-generation": "llama-3.1-8b-instant"
         }
 
-    def is_allowed(self, role: str, endpoint: str, task: str):
+    def get_rate_limit(self, department: str):
+        policy = self.department_policies.get(department)
+        if not policy:
+            return 10
+        return policy.get("rate_limit_per_minute", 10)
 
-        policy = self.role_policies.get(role)
+    def is_allowed(self, department: str, endpoint: str, task: str):
+        policy = self.department_policies.get(department)
 
         if not policy:
-            return False, "Unknown role", None
+            return (False, f"Unknown department '{department}'", None)
 
-        if "*" not in policy["allow_endpoints"] and endpoint not in policy["allow_endpoints"]:
-            return False, f"Endpoint not allowed for role {role}", None
+        if endpoint not in policy["allow_endpoints"]:
+            return (False, f"Endpoint not allowed for department '{department}'", None)
 
-        allowed_tasks = policy["allowed_tasks"]
+        if task not in policy["allowed_tasks"]:
+            return (False, f"Task '{task}' is not allowed for department '{department}'", None)
 
-        if "*" in allowed_tasks:
-            resolved_model = self.task_to_model_mapping.get(task, "llama-3.1-8b-instant")
-            return True, None, resolved_model
+        model = self.task_to_model_mapping.get(task)
+        if not model:
+            return (False, f"No model mapped for task '{task}'", None)
 
-        if task not in allowed_tasks:
-            return False, f"Task '{task}' is not permitted for role {role}", None
-
-        resolved_model = self.task_to_model_mapping.get(task)
-
-        if not resolved_model:
-            return False, f"Task '{task}' is recognized but has no model mapped to it", None
-
-        return True, None, resolved_model
+        return (True, None, model)

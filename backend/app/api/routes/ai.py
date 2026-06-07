@@ -17,7 +17,9 @@ from app.services.rbac.rbac_service import check_access
 from app.services.streaming.stream_llm_service import stream_llm_response
 from app.services.cost.cost_calculator import estimate_cost
 from app.services.cost.usage_tracker import log_usage
-
+from app.services.rate_limit.rate_limit_service import (
+    check_rate_limit
+)
 router = APIRouter(
     prefix="/ai",
     tags=["AI Gateway"]
@@ -91,6 +93,26 @@ def _validate_response_schema(structured_response: Dict[str, Any], current_user:
         )
 
 
+async def _verify_rate_limit(current_user: UserContext, log_base: Dict[str, Any]) -> None:
+    allowed = await check_rate_limit(
+        username=current_user.username,
+        department=current_user.dept
+    )
+
+    if not allowed:
+        audit_logger.log_event(
+            event_type="RATE_LIMIT_BLOCK",
+            actor=current_user.username,
+            metadata=log_base
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Rate limit exceeded. "
+                "Please try again later."
+            )
+        )
+    
 @router.post("/generate")
 async def generate(
     data: ChatRequest,
@@ -106,6 +128,7 @@ async def generate(
     }
 
     try:
+        await _verify_rate_limit(current_user, log_base)
         sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_base)
         rbac_result = _verify_rbac_access(current_user, "/ai/generate", data.task, log_base)
         
@@ -180,9 +203,11 @@ async def generate(
             actor=current_user.username,
             metadata={**log_base, "error": str(e)}
         )
+        print("DEBUG ERROR:", e)
+
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal gateway error"
+            status_code=500,
+            detail=str(e)
         )
 
 
@@ -191,8 +216,9 @@ async def generate_stream(
     data: ChatRequest,
     current_user: UserContext = Depends(get_current_user)
 ):
-    log_context = {"username": current_user.username} 
+    log_context = {"username": current_user.username}
 
+    await _verify_rate_limit(current_user, log_context)
     sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_context)
     rbac_result = _verify_rbac_access(current_user, "/ai/generate-stream", data.task, log_context)
 

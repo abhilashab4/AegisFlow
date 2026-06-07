@@ -102,7 +102,7 @@ async def login(data: LoginRequest):
 
         access_token = create_access_token(
             data={
-                "user_id": user.id,          # ✅ FIX
+                "user_id": user.id,       
                 "username": user.username,
                 "role": user.role,
                 "dept": user.department
