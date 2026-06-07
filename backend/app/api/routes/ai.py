@@ -20,6 +20,9 @@ from app.services.cost.usage_tracker import log_usage
 from app.services.rate_limit.rate_limit_service import (
     check_rate_limit
 )
+from app.schemas.pii_schema import (
+    PIIPreviewRequest
+)
 router = APIRouter(
     prefix="/ai",
     tags=["AI Gateway"]
@@ -112,6 +115,35 @@ async def _verify_rate_limit(current_user: UserContext, log_base: Dict[str, Any]
                 "Please try again later."
             )
         )
+    
+
+@router.post(
+    "/preview-sanitization"
+)
+async def preview_sanitization(
+    data: PIIPreviewRequest,
+    current_user: UserContext = Depends(
+        get_current_user
+    )
+):
+
+    result = (
+        pii_pipeline.sanitize_prompt(
+            data.prompt
+        )
+    )
+
+    return {
+
+        "safe":
+            result["safe"],
+
+        "original_prompt":
+            data.prompt,
+
+        "sanitized_prompt":
+            result["sanitized_text"]
+    }
     
 @router.post("/generate")
 async def generate(
