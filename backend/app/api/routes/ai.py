@@ -2,6 +2,7 @@ import uuid
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+import traceback
 
 from app.api.dependencies.auth_dependency import get_current_user
 from app.schemas.chat_schema import ChatRequest
@@ -229,13 +230,16 @@ async def generate(
     except HTTPException as http_error:
         raise http_error
 
+
     except Exception as e:
-        audit_logger.log_event(
-            event_type="SYSTEM_FAILURE",
-            actor=current_user.username,
-            metadata={**log_base, "error": str(e)}
-        )
-        print("DEBUG ERROR:", e)
+
+        print("\n" + "=" * 50)
+        print("FULL ERROR")
+        print("=" * 50)
+
+        traceback.print_exc()
+
+        print("=" * 50)
 
         raise HTTPException(
             status_code=500,
