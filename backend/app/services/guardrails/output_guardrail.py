@@ -1,103 +1,122 @@
-from sentence_transformers import CrossEncoder
-import numpy as np
+import re
 
 class OutputGuardrail:
 
     def __init__(self):
 
-        self.blocked_keywords = [
-            "bomb",
-            "explosive",
-            "malware",
-            "hack",
-            "credit card theft",
-            "fraud",
-            "illegal activity",
-            "weapon",
+        # Strong regex patterns (normalized + obfuscated + variations)
+        self.patterns = {
+            "malware": [
+                r"\bmalware\b",
+                r"\bvirus\b",
+                r"\btrojan\b",
+                r"\bspyware\b",
+                r"\bransomware\b"
+            ],
+
+            "hacking": [
+                r"\bhack(ing)?\b",
+                r"\bcrack(ing)?\b",
+                r"\bunauthori[sz]ed access\b",
+                r"\bexploit\b",
+                r"\bbreach\b",
+                r"\bsql\s*injection\b"
+            ],
+
+            "weapons": [
+                r"\bbomb\b",
+                r"\bexplosive(s)?\b",
+                r"\bweapon(s)?\b",
+                r"\bfirearm(s)?\b",
+                r"\bgun\b",
+                r"\bgrenade\b"
+            ],
+
+            "fraud": [
+                r"\bfraud\b",
+                r"\bscam\b",
+                r"\bphish(ing)?\b",
+                r"\bstolen\s*credit\s*card\b",
+                r"\bcredit\s*card\s*theft\b",
+                r"\bidentity\s*theft\b"
+            ],
+
+            "drug_illegal": [
+                r"\bcocaine\b",
+                r"\bheroin\b",
+                r"\bmdma\b",
+                r"\bmeth\b",
+                r"\billegal\s*drug(s)?\b"
+            ]
+        }
+
+        # Obfuscation handling (b@ck, h4ck, b0mb etc.)
+        self.obfuscation_patterns = [
+            r"h[\W_]*a[\W_]*c[\W_]*k",
+            r"b[\W_]*o[\W_]*m[\W_]*b",
+            r"w[\W_]*e[\W_]*a[\W_]*p[\W_]*o[\W_]*n",
+            r"f[\W_]*r[\W_]*a[\W_]*u[\W_]*d"
         ]
 
-
-        self.semantic_model = CrossEncoder(
-            "cross-encoder/nli-distilroberta-base"
-        )
-
-        self.policy_statement = (
-            "This response promotes harmful, "
-            "illegal, or unsafe activity."
-        )
-
-    def keyword_check(self, text: str):
+    # -----------------------------
+    # Step 1: Obfuscation detection
+    # -----------------------------
+    def obfuscation_check(self, text: str):
 
         lowered = text.lower()
 
-        for word in self.blocked_keywords:
-
-            if word in lowered:
-
+        for pattern in self.obfuscation_patterns:
+            if re.search(pattern, lowered):
                 return {
                     "safe": False,
-                    "reason": (
-                        f"Blocked keyword detected: "
-                        f"{word}"
-                    ),
-                    "layer": "keyword"
+                    "reason": f"Obfuscated harmful intent detected: {pattern}",
+                    "layer": "obfuscation"
                 }
 
         return {"safe": True}
 
+    # -----------------------------
+    # Step 2: Regex classification
+    # -----------------------------
+    def keyword_check(self, text: str):
 
-    def semantic_check(self, text: str):
+        lowered = text.lower()
+        reasons = []
 
-        scores = self.semantic_model.predict([
-            (
-                text,
-                self.policy_statement
-            )
-        ])
+        for category, patterns in self.patterns.items():
 
-        print("DEBUG: Raw semantic scores =", scores)
+            for pattern in patterns:
 
+                if re.search(pattern, lowered):
+                    reasons.append(category)
+                    break
 
-        entailment_score = float(scores[0][2])
-
-        print(
-            "DEBUG: Entailment score =",
-            entailment_score
-        )
-
-        if entailment_score > 5.0:
-
+        if reasons:
             return {
                 "safe": False,
-                "reason": (
-                    "Semantic policy "
-                    "violation detected"
-                ),
-                "layer": "semantic",
-                "score": entailment_score
+                "reason": f"Blocked categories detected: {', '.join(reasons)}",
+                "layer": "regex",
+                "categories": reasons
             }
+
+        return {"safe": True}
+
+    # -----------------------------
+    # Main validator
+    # -----------------------------
+    def validate(self, text: str):
+
+        # 1. Obfuscation layer (highest priority)
+        obf = self.obfuscation_check(text)
+        if not obf["safe"]:
+            return obf
+
+        # 2. Regex classification layer
+        result = self.keyword_check(text)
+        if not result["safe"]:
+            return result
 
         return {
             "safe": True,
-            "score": entailment_score
-        }
-
-    def validate(self, text: str):
-
-        keyword_result = (
-            self.keyword_check(text)
-        )
-
-        if not keyword_result["safe"]:
-            return keyword_result
-
-        semantic_result = (
-            self.semantic_check(text)
-        )
-
-        if not semantic_result["safe"]:
-            return semantic_result
-
-        return {
-            "safe": True
+            "layer": "clean"
         }
