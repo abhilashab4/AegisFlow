@@ -4,6 +4,8 @@ from app.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.ai import router as ai_router
+from app.api.routes import policy
+
 
 
 app = FastAPI(
@@ -23,7 +25,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(ai_router)
-
+app.include_router(policy.router)
 
 # Root endpoint
 @app.get("/")

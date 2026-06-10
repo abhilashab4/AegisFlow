@@ -22,7 +22,7 @@ from app.services.rate_limit.rate_limit_service import (
     check_rate_limit
 )
 from app.schemas.pii_schema import (
-    PIIPreviewRequest
+    PIIPreviewRequest, PIITestRequest
 )
 router = APIRouter(
     prefix="/ai",
@@ -100,7 +100,7 @@ def _validate_response_schema(structured_response: Dict[str, Any], current_user:
 async def _verify_rate_limit(current_user: UserContext, log_base: Dict[str, Any]) -> None:
     allowed = await check_rate_limit(
         username=current_user.username,
-        department=current_user.dept
+        department=current_user.department
     )
 
     if not allowed:
@@ -116,34 +116,21 @@ async def _verify_rate_limit(current_user: UserContext, log_base: Dict[str, Any]
                 "Please try again later."
             )
         )
-    
 
-@router.post(
-    "/preview-sanitization"
-)
+@router.post("/preview-sanitization")
 async def preview_sanitization(
     data: PIIPreviewRequest,
-    current_user: UserContext = Depends(
-        get_current_user
-    )
+    current_user: UserContext = Depends(get_current_user)
 ):
 
-    result = (
-        pii_pipeline.sanitize_prompt(
-            data.prompt
-        )
-    )
+    result = pii_pipeline.sanitize_prompt(data.prompt)
 
     return {
-
-        "safe":
-            result["safe"],
-
-        "original_prompt":
-            data.prompt,
-
-        "sanitized_prompt":
-            result["sanitized_text"]
+        "safe": result["safe"],
+        "original_prompt": data.prompt,
+        "sanitized_prompt": result["sanitized_text"],
+        "reason": result.get("reason"),
+        "residual_pii": result.get("residual_pii", []),
     }
     
 @router.post("/generate")
@@ -156,7 +143,7 @@ async def generate(
         "request_id": request_id,
         "username": current_user.username,
         "role": current_user.role,
-        "department": current_user.dept,
+        "department": current_user.department,
         "original_prompt": data.prompt
     }
 
@@ -195,7 +182,7 @@ async def generate(
                 db=db,
                 username=current_user.username,
                 role=current_user.role,
-                department=current_user.dept,
+                department=current_user.department,
                 model=selected_model,
                 provider=provider_name,
                 prompt_tokens=prompt_tokens,

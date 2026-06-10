@@ -58,5 +58,5 @@ async def get_current_user(
         user_id=user.id,
         username=user.username,
         role=user.role,
-        dept=user.department
+        department=user.department
     )

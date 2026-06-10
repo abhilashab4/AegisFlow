@@ -12,7 +12,7 @@ class UserContext(BaseModel):
     user_id: int
     username: str
     role: str
-    dept: str
+    department: str
 
 class RegisterRequest(BaseModel):
 

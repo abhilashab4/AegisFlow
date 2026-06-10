@@ -9,13 +9,9 @@ class PIIPipeline:
     def __init__(self):
 
         self.regex_detector = RegexDetector()
-
         self.transformer_detector = TransformerDetector()
-
         self.pseudonymizer = Pseudonymizer()
-
         self.verifier = VerificationEngine()
-
 
     def sanitize_prompt(self, text: str):
 
@@ -30,21 +26,35 @@ class PIIPipeline:
             transformer_results
         )
 
-        unique_detections = []
+        all_detections = sorted(
+            all_detections,
+            key=lambda x: (
+                -x.get("confidence", 0),
+                -(x["end"] - x["start"])
+            )
+        )
 
-        seen = set()
+        unique_detections = []
+        occupied = set()
 
         for d in all_detections:
 
-            key = (
-                d["start"],
-                d["end"],
-                d["entity_type"]
+            span = set(
+                range(
+                    d["start"],
+                    d["end"]
+                )
             )
 
-            if key not in seen:
-                seen.add(key)
-                unique_detections.append(d)
+            if occupied.intersection(span):
+                continue
+
+            unique_detections.append(d)
+            occupied.update(span)
+
+        unique_detections.sort(
+            key=lambda x: x["start"]
+        )
 
         pseudonymized = (
             self.pseudonymizer.pseudonymize(
@@ -58,7 +68,9 @@ class PIIPipeline:
         )
 
         verification = (
-            self.verifier.verify(sanitized_text)
+            self.verifier.verify(
+                sanitized_text
+            )
         )
 
         if not verification["safe"]:
@@ -66,6 +78,7 @@ class PIIPipeline:
             return {
                 "safe": False,
                 "reason": "Residual PII detected",
+                "sanitized_text": sanitized_text,
                 "residual_pii": verification[
                     "residual_pii"
                 ]

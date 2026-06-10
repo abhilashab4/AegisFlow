@@ -13,7 +13,7 @@ def check_access(
 
     allowed, reason, model = (
         policy_engine.is_allowed(
-            department=user_context.dept,
+            department=user_context.department,
             endpoint=endpoint,
             task=task
         )

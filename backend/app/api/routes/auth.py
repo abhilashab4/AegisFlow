@@ -105,7 +105,7 @@ async def login(data: LoginRequest):
                 "user_id": user.id,       
                 "username": user.username,
                 "role": user.role,
-                "dept": user.department
+                "department": user.department
             }
         )
 

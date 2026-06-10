@@ -4,16 +4,13 @@ import uuid
 class Pseudonymizer:
 
     def __init__(self):
-
         self.entity_map = {}
-
 
     def _generate_token(self, entity_type: str):
 
-        unique_id = str(uuid.uuid4())[:6].upper()
+        unique_id = str(uuid.uuid4())[:8].upper()
 
         return f"{entity_type}_TOKEN_{unique_id}"
-
 
     def pseudonymize(self, text: str, detections: list):
 
@@ -27,22 +24,49 @@ class Pseudonymizer:
 
         for d in detections:
 
-            original = d["match"]
-            entity_type = d["entity_type"]
+            start = d.get("start")
+            end = d.get("end")
+            original = d.get("match", "")
+            entity_type = d.get(
+                "entity_type",
+                "PII"
+            )
 
-            if original in self.entity_map:
-                token = self.entity_map[original]
+            if (
+                start is None
+                or end is None
+                or start >= end
+            ):
+                continue
+
+            lookup_key = original.strip().lower()
+
+            if lookup_key in self.entity_map:
+
+                token = self.entity_map[
+                    lookup_key
+                ]
+
             else:
-                token = self._generate_token(entity_type)
-                self.entity_map[original] = token
+
+                token = self._generate_token(
+                    entity_type
+                )
+
+                self.entity_map[
+                    lookup_key
+                ] = token
 
             modified_text = (
-                modified_text[:d["start"]]
+                modified_text[:start]
                 + token
-                + modified_text[d["end"]:]
+                + modified_text[end:]
             )
 
         return {
             "sanitized_text": modified_text,
-            "entity_map": self.entity_map
+            "entity_map": {
+                k: v
+                for k, v in self.entity_map.items()
+            }
         }

@@ -76,3 +76,12 @@ class PolicyEngine:
             return (False, f"No model mapped for task '{task}'", None)
 
         return (True, None, model)
+
+    def get_allowed_tasks(self, department: str):
+        policy = self.department_policies.get(department)
+
+        if not policy:
+            return []
+
+        return policy["allowed_tasks"]
+    

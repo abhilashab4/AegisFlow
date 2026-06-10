@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Container,
   Paper,
@@ -30,19 +30,41 @@ import {
   generateResponse
 } from "../services/aiService";
 
+import api from "../api/axios";
+
 export default function WorkSpacePage() {
-  const [task, setTask] = useState("text-summarization");
+  const [task, setTask] = useState("");
   const [prompt, setPrompt] = useState("");
   const [preview, setPreview] = useState(null);
+  const [sanitizedPrompt, setSanitizedPrompt] = useState(""); // Holds mutable, editable text
   const [response, setResponse] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
+  const [allowedTasks, setAllowedTasks] = useState([]);
+  const [department, setDepartment] = useState("");
+
+  useEffect(() => {
+    fetchPolicy();
+  }, []);
+
+  const fetchPolicy = async () => {
+    try {
+      const { data } = await api.get("/policy/me");
+      setDepartment(data.department || "");
+      const tasks = data.allowed_tasks || [];
+      setAllowedTasks(tasks);
+      setTask(tasks.length > 0 ? tasks[0] : "");
+    } catch (error) {
+      console.error("Policy fetch failed:", error);
+    }
+  };
 
   const handleReview = async () => {
     try {
       setReviewLoading(true);
       const result = await previewSanitization(prompt);
       setPreview(result);
+      setSanitizedPrompt(result?.sanitized_prompt || ""); // Populate editable box immediately
       setResponse(null);
     } catch (error) {
       alert(
@@ -57,7 +79,8 @@ export default function WorkSpacePage() {
   const handleGenerate = async () => {
     try {
       setGenerateLoading(true);
-      const result = await generateResponse(prompt, task);
+      // Passes our adjusted sanitized prompt to the architecture nodes
+      const result = await generateResponse(sanitizedPrompt, task);
       setResponse(result);
     } catch (error) {
       alert(
@@ -87,6 +110,28 @@ export default function WorkSpacePage() {
               boxShadow: "0px 4px 20px rgba(0, 0, 0, 0.03)"
             }}
           >
+            {/* Department Label */}
+            <Box sx={{ mb: 2 }}>
+              <Chip
+                label={`Department: ${department}`}
+                color="primary"
+                size="small"
+              />
+            </Box>
+
+            {/* Allowed Tasks Row */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                Allowed Tasks
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                {allowedTasks.map((taskItem) => (
+                  <Chip key={taskItem} label={taskItem} color="success" size="small" />
+                ))}
+              </Stack>
+            </Box>
+
+            {/* Branding Header */}
             <Box sx={{ mb: 4, display: "flex", alignItems: "center", gap: 1.5 }}>
               <AutoAwesome color="primary" sx={{ fontSize: 32 }} />
               <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
@@ -100,13 +145,15 @@ export default function WorkSpacePage() {
                 fullWidth
                 label="Select Task Strategy"
                 variant="outlined"
-                value={task}
+                value={task || ""}
                 onChange={(e) => setTask(e.target.value)}
+                disabled={allowedTasks.length === 0}
               >
-                <MenuItem value="text-summarization">Text Summarization</MenuItem>
-                <MenuItem value="data-extraction">Data Extraction</MenuItem>
-                <MenuItem value="code-generation">Code Generation</MenuItem>
-                <MenuItem value="complex-reasoning">Complex Reasoning</MenuItem>
+                {allowedTasks.map((taskOption) => (
+                  <MenuItem key={taskOption} value={taskOption}>
+                    {taskOption}
+                  </MenuItem>
+                ))}
               </TextField>
 
               <TextField
@@ -146,9 +193,11 @@ export default function WorkSpacePage() {
           </Paper>
         </Grid>
 
+        {/* Right Column: Output Displays */}
         <Grid item xs={12} md={7}>
           <Stack spacing={4} sx={{ height: "100%" }}>
             
+            {/* Awaiting Security Audit Placeholder: Shows only if review hasn't been requested */}
             {!preview && !generateLoading && !response && (
               <Box
                 sx={{
@@ -170,12 +219,13 @@ export default function WorkSpacePage() {
                 <Typography variant="h6" fontWeight={600} gutterBottom>
                   Awaiting Security Audit
                 </Typography>
-                <Typography variant="body2" maxWidth={360}>
+                <Typography variant="body2" sx={{ maxWidth: 360 }}>
                   Submit your configuration input on the left to run PII scrubbing safeguards before triggering the LLM generation.
                 </Typography>
               </Box>
             )}
 
+            {/* Sanitized Payload Preview Component: Hidden until handleReview is triggered */}
             {preview && (
               <Paper
                 elevation={0}
@@ -184,12 +234,12 @@ export default function WorkSpacePage() {
                   borderRadius: 4,
                   border: "1px solid",
                   borderColor: "success.light",
-                  backgroundColor: "success.radialGradient" || "background.paper",
+                  backgroundColor: "background.paper",
                   boxShadow: "0px 10px 30px rgba(46, 125, 50, 0.05)"
                 }}
               >
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-                  <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                     <FactCheck color="success" />
                     <Typography variant="h6" sx={{ fontWeight: 700 }}>
                       Security Verification
@@ -199,28 +249,44 @@ export default function WorkSpacePage() {
                 </Box>
 
                 <Alert severity="success" variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
-                  Prompt successfully passed enterprise PII sanitization parameters.
+                  Prompt successfully passed enterprise PII sanitization parameters. Review or adjust payload parameters below.
                 </Alert>
 
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.5px", color: "text.secondary" }}>
-                  Sanitized Production Payload
+                  Sanitized Production Payload (Editable)
                 </Typography>
                 
-                <Box
+                {/* 
+                  Editable input window replacing old static box context.
+                  Built with internal height parameters and overflow logic to fix massive text strains.
+                */}
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  maxRows={12}
+                  variant="outlined"
+                  value={sanitizedPrompt}
+                  onChange={(e) => setSanitizedPrompt(e.target.value)}
                   sx={{
-                    p: 2.5,
-                    borderRadius: 2,
+                    mb: 4,
                     backgroundColor: "action.hover",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    fontFamily: "monospace",
-                    fontSize: "0.9rem",
-                    whiteSpace: "pre-wrap",
-                    mb: 4
+                    borderRadius: 2,
+                    "& .MuiOutlinedInput-root": {
+                      fontFamily: "monospace",
+                      fontSize: "0.9rem",
+                    }
                   }}
-                >
-                  {preview.sanitized_prompt}
-                </Box>
+                  InputProps={{
+                    sx: {
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      "& textarea": {
+                        overflowY: "auto !important"
+                      }
+                    }
+                  }}
+                />
 
                 <Button
                   variant="contained"
@@ -229,7 +295,7 @@ export default function WorkSpacePage() {
                   fullWidth
                   startIcon={generateLoading ? <CircularProgress size={20} color="inherit" /> : <AutoAwesome />}
                   onClick={handleGenerate}
-                  disabled={generateLoading}
+                  disabled={generateLoading || !sanitizedPrompt.trim()}
                   sx={{
                     py: 1.5,
                     borderRadius: 2,
@@ -242,6 +308,7 @@ export default function WorkSpacePage() {
               </Paper>
             )}
 
+            {/* Processing Server Node Loop Animation */}
             {generateLoading && (
               <Paper
                 elevation={0}
@@ -267,6 +334,7 @@ export default function WorkSpacePage() {
               </Paper>
             )}
 
+            {/* Inference Completed Target Summary View */}
             {response && (
               <Paper
                 elevation={0}
@@ -291,6 +359,9 @@ export default function WorkSpacePage() {
                     borderColor: "divider",
                     lineHeight: 1.7,
                     whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    maxHeight: "450px",
+                    overflowY: "auto",
                     fontSize: "1rem",
                     mb: 4
                   }}
@@ -300,7 +371,6 @@ export default function WorkSpacePage() {
 
                 <Divider sx={{ mb: 3 }} />
 
-                {/* Metrics Meta Metadata Grid */}
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, textTransform: "uppercase", fontSize: "0.75rem", color: "text.secondary" }}>
                   Execution Analytics
                 </Typography>
@@ -338,7 +408,7 @@ export default function WorkSpacePage() {
                   </Grid>
 
                   <Grid item xs={6} sm={3}>
-                    <Card variant="outlined" sx={{ borderRadius: 2, borderColor: "success.light", bgcolor: "success.light" && "transparent" }}>
+                    <Card variant="outlined" sx={{ borderRadius: 2 }}>
                       <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ color: "success.main", mb: 0.5 }}>
                           <AttachMoney fontSize="small" />
