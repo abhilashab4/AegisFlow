@@ -5,7 +5,7 @@ import {
 } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage";
-import WorkspacePage from "./pages/WorkspacePage";
+import WorkSpacePage from "./pages/WorkSpacePage";
 
 function App() {
 
@@ -22,7 +22,7 @@ function App() {
 
         <Route
           path="/workspace"
-          element={<WorkspacePage />}
+          element={<WorkSpacePage />}
         />
 
       </Routes>

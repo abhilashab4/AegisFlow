@@ -30,7 +30,7 @@ import {
   generateResponse
 } from "../services/aiService";
 
-export default function WorkspacePage() {
+export default function WorkSpacePage() {
   const [task, setTask] = useState("text-summarization");
   const [prompt, setPrompt] = useState("");
   const [preview, setPreview] = useState(null);
