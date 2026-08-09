@@ -1,23 +1,24 @@
-from sentence_transformers import SentenceTransformer
+from huggingface_hub import InferenceClient
+
+from app.core.config import settings
 
 
 class EmbeddingService:
 
-    _model = None
-
     def __init__(self):
 
-        if EmbeddingService._model is None:
+        self.client = InferenceClient(
+            provider="hf-inference",
+            api_key=settings.HF_TOKEN
+        )
 
-            EmbeddingService._model = SentenceTransformer(
-                "all-MiniLM-L6-v2"
-            )
-
-        self.model = EmbeddingService._model
+        self.model = "sentence-transformers/all-MiniLM-L6-v2"
 
     def encode(self, text: str):
 
-        return self.model.encode(
+        result = self.client.feature_extraction(
             text,
-            normalize_embeddings=True
-        ).tolist()
+            model=self.model
+        )
+
+        return result.tolist()
