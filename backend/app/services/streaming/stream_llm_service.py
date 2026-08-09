@@ -1,65 +1,65 @@
-from app.services.providers.provider_router import (
-    ProviderRouter
-)
+# from app.services.providers.provider_router import (
+#     ProviderRouter
+# )
 
-from app.services.streaming.stream_validator import (
-    StreamValidator
-)
+# from app.services.streaming.stream_validator import (
+#     StreamValidator
+# )
 
-provider_router = ProviderRouter()
+# provider_router = ProviderRouter()
 
-validator = StreamValidator()
+# validator = StreamValidator()
 
 
-async def stream_llm_response(
-    prompt: str,
-    model: str = None
-):
+# async def stream_llm_response(
+#     prompt: str,
+#     model: str = None
+# ):
 
-    buffer = ""
+#     buffer = ""
 
-    async for chunk in provider_router.stream_generate(
-        prompt=prompt,
-        model=model
-    ):
+#     async for chunk in provider_router.stream_generate(
+#         prompt=prompt,
+#         model=model
+#     ):
 
-        if not chunk:
-            continue
+#         if not chunk:
+#             continue
 
-        buffer += chunk
+#         buffer += chunk
 
-        if len(buffer) >= 256:
+#         if len(buffer) >= 256:
 
-            validation = validator.validate_chunk(
-                buffer
-            )
+#             validation = validator.validate_chunk(
+#                 buffer
+#             )
 
-            if not validation["safe"]:
+#             if not validation["safe"]:
 
-                yield (
-                    "\n\n"
-                    "[STREAM TERMINATED: "
-                    "POLICY VIOLATION]"
-                )
+#                 yield (
+#                     "\n\n"
+#                     "[STREAM TERMINATED: "
+#                     "POLICY VIOLATION]"
+#                 )
 
-                return
+#                 return
 
-            buffer = ""
+#             buffer = ""
 
-        yield chunk
+#         yield chunk
 
-    if buffer:
+#     if buffer:
 
-        validation = validator.validate_chunk(
-            buffer
-        )
+#         validation = validator.validate_chunk(
+#             buffer
+#         )
 
-        if not validation["safe"]:
+#         if not validation["safe"]:
 
-            yield (
-                "\n\n"
-                "[STREAM TERMINATED: "
-                "POLICY VIOLATION]"
-            )
+#             yield (
+#                 "\n\n"
+#                 "[STREAM TERMINATED: "
+#                 "POLICY VIOLATION]"
+#             )
 
-            return
+#             return

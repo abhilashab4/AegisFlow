@@ -6,6 +6,8 @@ from app.db.base import Base
 from app.models.user import User
 from app.models.audit_log import AuditLog
 from app.models.usage_log import UsageLog
+from app.models.company_policy import Policy
+
 
 async def init_db():
 

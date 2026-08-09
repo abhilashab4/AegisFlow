@@ -76,21 +76,41 @@ export default function WorkSpacePage() {
     }
   };
 
-  const handleGenerate = async () => {
-    try {
-      setGenerateLoading(true);
-      // Passes our adjusted sanitized prompt to the architecture nodes
-      const result = await generateResponse(sanitizedPrompt, task);
-      setResponse(result);
-    } catch (error) {
+ const handleGenerate = async () => {
+  try {
+    setGenerateLoading(true);
+
+    const result = await generateResponse(
+      sanitizedPrompt,
+      task
+    );
+
+    setResponse(result);
+
+  } catch (error) {
+
+    const detail = error.response?.data?.detail;
+
+    if (typeof detail === "object" && detail !== null) {
+
       alert(
-        error.response?.data?.detail ||
+        `${detail.message}\n\n` +
+        `Category: ${detail.category}\n` +
+        `Risk Score: ${detail.risk_score}`
+      );
+
+    } else {
+
+      alert(
+        detail ||
         "Generation failed"
       );
-    } finally {
-      setGenerateLoading(false);
     }
-  };
+
+  } finally {
+    setGenerateLoading(false);
+  }
+};
 
   return (
     <Container maxWidth="xl" sx={{ py: 6 }}>

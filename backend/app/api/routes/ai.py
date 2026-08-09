@@ -4,6 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 import traceback
 
+from app.services.guardrails.output_guardrail import OutputGuardrail
+from app.services.guardrails.embedding_service import EmbeddingService
+from app.services.guardrails.policy_service import PolicyService
+
 from app.api.dependencies.auth_dependency import get_current_user
 from app.schemas.chat_schema import ChatRequest
 from app.schemas.auth_schema import UserContext
@@ -11,11 +15,10 @@ from app.db.session import AsyncSessionLocal
 
 from app.services.pii.pii_service import PIIPipeline
 from app.services.providers.provider_router import ProviderRouter
-from app.services.guardrails.output_guardrail import OutputGuardrail
 from app.services.schema_validator import validate_llm_response
 from app.services.audits.audit_logger import AuditLogger
 from app.services.rbac.rbac_service import check_access
-from app.services.streaming.stream_llm_service import stream_llm_response
+# from app.services.streaming.stream_llm_service import stream_llm_response
 from app.services.cost.cost_calculator import estimate_cost
 from app.services.cost.usage_tracker import log_usage
 from app.services.rate_limit.rate_limit_service import (
@@ -30,7 +33,6 @@ router = APIRouter(
 )
 
 provider_router = ProviderRouter()
-guardrail = OutputGuardrail()
 audit_logger = AuditLogger()
 pii_pipeline = PIIPipeline()
 
@@ -69,17 +71,64 @@ def _verify_rbac_access(current_user: UserContext, endpoint: str, task: str, log
     return rbac_result
 
 
-def _validate_output_guardrails(llm_response: str, current_user: UserContext, log_base: Dict[str, Any]) -> None:
-    guard_result = guardrail.validate(llm_response)
+async def _validate_output_guardrails(
+    llm_response: str,
+    current_user: UserContext,
+    log_base: Dict[str, Any]
+) -> None:
+
+    async with AsyncSessionLocal() as db:
+
+        embedding_service = EmbeddingService()
+
+        policy_service = PolicyService(
+            db=db,
+            embedding_service=embedding_service
+        )
+
+        guardrail = OutputGuardrail(
+            policy_service=policy_service
+        )
+
+        guard_result = await guardrail.validate(
+            llm_response
+        )
+        
+        guard_result = await guardrail.validate(llm_response)
+
+        print("\n" + "=" * 60)
+        print("OUTPUT GUARDRAIL RESULT")
+        print("=" * 60)
+        print("LLM RESPONSE:")
+        print(llm_response)
+        print("\nGUARD RESULT:")
+        print(guard_result)
+        print("=" * 60)
+
     if not guard_result["safe"]:
+
         audit_logger.log_event(
             event_type="POLICY_VIOLATION",
             actor=current_user.username,
-            metadata={**log_base, "blocked": True, "reason": guard_result["reason"]}
+            metadata={
+                **log_base,
+                "blocked": True,
+                "category": guard_result.get("category"),
+                "risk_score": guard_result.get("risk_score"),
+                "reason": guard_result.get("reason")
+            }
         )
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Compliance violation: {guard_result['reason']}"
+            detail={
+                "message": guard_result.get(
+                    "replacement",
+                    "Response blocked by corporate compliance policy."
+                ),
+                "category": guard_result.get("category"),
+                "risk_score": guard_result.get("risk_score")
+            }
         )
 
 
@@ -169,7 +218,7 @@ async def generate(
             completion_tokens=completion_tokens
         )
 
-        _validate_output_guardrails(llm_response, current_user, log_base)
+        await _validate_output_guardrails(llm_response, current_user, log_base)
 
         structured_response = {
             "status": "success",
@@ -234,21 +283,21 @@ async def generate(
         )
 
 
-@router.post("/generate-stream")
-async def generate_stream(
-    data: ChatRequest,
-    current_user: UserContext = Depends(get_current_user)
-):
-    log_context = {"username": current_user.username}
+# @router.post("/generate-stream")
+# async def generate_stream(
+#     data: ChatRequest,
+#     current_user: UserContext = Depends(get_current_user)
+# ):
+#     log_context = {"username": current_user.username}
 
-    await _verify_rate_limit(current_user, log_context)
-    sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_context)
-    rbac_result = _verify_rbac_access(current_user, "/ai/generate-stream", data.task, log_context)
+#     await _verify_rate_limit(current_user, log_context)
+#     sanitized_prompt = _verify_and_sanitize_pii(data.prompt, current_user, log_context)
+#     rbac_result = _verify_rbac_access(current_user, "/ai/generate-stream", data.task, log_context)
 
-    return StreamingResponse(
-        stream_llm_response(
-            sanitized_prompt,
-            rbac_result["model"]
-        ),
-        media_type="text/plain"
-    )
+#     return StreamingResponse(
+#         stream_llm_response(
+#             sanitized_prompt,
+#             rbac_result["model"]
+#         ),
+#         media_type="text/plain"
+#     )

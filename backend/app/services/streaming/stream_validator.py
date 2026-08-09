@@ -1,21 +1,21 @@
-from app.services.guardrails.output_guardrail import (
-    OutputGuardrail
-)
+# from app.services.guardrails.output_guardrail import (
+#     OutputGuardrail
+# )
 
 
-class StreamValidator:
+# class StreamValidator:
 
-    def __init__(self):
+#     def __init__(self):
 
-        self.guardrail = OutputGuardrail()
+#         self.guardrail = OutputGuardrail()
 
-        self.chunk_size = 200
+#         self.chunk_size = 200
 
 
-    def validate_chunk(self, text: str):
+#     def validate_chunk(self, text: str):
 
-        result = (
-            self.guardrail.validate(text)
-        )
+#         result = (
+#             self.guardrail.validate(text)
+#         )
 
-        return result
+#         return result
