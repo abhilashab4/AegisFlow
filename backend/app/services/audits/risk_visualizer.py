@@ -1,132 +1,132 @@
-import json
-from pathlib import Path
+# import json
+# from pathlib import Path
 
-import pandas as pd
-import plotly.graph_objects as go
-
-
-LOG_FILE = "audit_logs.jsonl"
+# import pandas as pd
+# import plotly.graph_objects as go
 
 
-class RiskVisualizer:
-
-    def __init__(self):
-
-        self.log_path = Path(LOG_FILE)
+# LOG_FILE = "audit_logs.jsonl"
 
 
-    def load_logs(self):
+# class RiskVisualizer:
 
-        if not self.log_path.exists():
-            return []
+#     def __init__(self):
 
-        with open(self.log_path, "r") as f:
+#         self.log_path = Path(LOG_FILE)
 
-            return [
-                json.loads(line)
-                for line in f.readlines()
-            ]
 
-    def generate_sankey(self):
+#     def load_logs(self):
 
-        logs = self.load_logs()
+#         if not self.log_path.exists():
+#             return []
 
-        departments = []
+#         with open(self.log_path, "r") as f:
 
-        outcomes = []
+#             return [
+#                 json.loads(line)
+#                 for line in f.readlines()
+#             ]
 
-        for log in logs:
+#     def generate_sankey(self):
 
-            metadata = log.get(
-                "metadata",
-                {}
-            )
+#         logs = self.load_logs()
 
-            actor = log.get(
-                "actor",
-                "unknown"
-            )
+#         departments = []
 
-            if "admin" in actor:
-                dept = "Engineering"
-            else:
-                dept = "Operations"
+#         outcomes = []
 
-            departments.append(dept)
+#         for log in logs:
 
-            if metadata.get("blocked"):
-                outcomes.append("Blocked")
-            else:
-                outcomes.append("Allowed")
+#             metadata = log.get(
+#                 "metadata",
+#                 {}
+#             )
 
-        labels = list(
-            set(departments + outcomes)
-        )
+#             actor = log.get(
+#                 "actor",
+#                 "unknown"
+#             )
 
-        label_to_index = {
-            label: i
-            for i, label in enumerate(labels)
-        }
+#             if "admin" in actor:
+#                 dept = "Engineering"
+#             else:
+#                 dept = "Operations"
 
-        source = []
-        target = []
-        value = []
+#             departments.append(dept)
 
-        flow_counter = {}
+#             if metadata.get("blocked"):
+#                 outcomes.append("Blocked")
+#             else:
+#                 outcomes.append("Allowed")
 
-        for dept, outcome in zip(
-            departments,
-            outcomes
-        ):
+#         labels = list(
+#             set(departments + outcomes)
+#         )
 
-            key = (dept, outcome)
+#         label_to_index = {
+#             label: i
+#             for i, label in enumerate(labels)
+#         }
 
-            flow_counter[key] = (
-                flow_counter.get(key, 0) + 1
-            )
+#         source = []
+#         target = []
+#         value = []
 
-        for (
-            dept,
-            outcome
-        ), count in flow_counter.items():
+#         flow_counter = {}
 
-            source.append(
-                label_to_index[dept]
-            )
+#         for dept, outcome in zip(
+#             departments,
+#             outcomes
+#         ):
 
-            target.append(
-                label_to_index[outcome]
-            )
+#             key = (dept, outcome)
 
-            value.append(count)
+#             flow_counter[key] = (
+#                 flow_counter.get(key, 0) + 1
+#             )
 
-        fig = go.Figure(
-            data=[
-                go.Sankey(
-                    node=dict(
-                        label=labels
-                    ),
-                    link=dict(
-                        source=source,
-                        target=target,
-                        value=value
-                    )
-                )
-            ]
-        )
+#         for (
+#             dept,
+#             outcome
+#         ), count in flow_counter.items():
 
-        fig.update_layout(
-            title_text=(
-                "Enterprise AI Risk Flow"
-            ),
-            font_size=12
-        )
+#             source.append(
+#                 label_to_index[dept]
+#             )
 
-        fig.write_html(
-            "risk_report.html"
-        )
+#             target.append(
+#                 label_to_index[outcome]
+#             )
 
-        return {
-            "status": "success",
-            "output": "risk_report.html"
-        }
+#             value.append(count)
+
+#         fig = go.Figure(
+#             data=[
+#                 go.Sankey(
+#                     node=dict(
+#                         label=labels
+#                     ),
+#                     link=dict(
+#                         source=source,
+#                         target=target,
+#                         value=value
+#                     )
+#                 )
+#             ]
+#         )
+
+#         fig.update_layout(
+#             title_text=(
+#                 "Enterprise AI Risk Flow"
+#             ),
+#             font_size=12
+#         )
+
+#         fig.write_html(
+#             "risk_report.html"
+#         )
+
+#         return {
+#             "status": "success",
+#             "output": "risk_report.html"
+#         }
