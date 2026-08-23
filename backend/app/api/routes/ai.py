@@ -27,10 +27,7 @@ from app.services.rate_limit.rate_limit_service import (
 from app.schemas.pii_schema import (
     PIIPreviewRequest, PIITestRequest
 )
-router = APIRouter(
-    prefix="/ai",
-    tags=["AI Gateway"]
-)
+router = APIRouter(prefix="/ai", tags=["AI Gateway"])
 
 provider_router = ProviderRouter()
 audit_logger = AuditLogger()

@@ -11,6 +11,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(data: RegisterRequest):
+    
     async with AsyncSessionLocal() as db:
         
         result = await db.execute(select(User).where(User.username == data.username))

@@ -1,31 +1,21 @@
 from sqlalchemy import select
-
 from app.models.company_policy import Policy
 
 
 class PolicyService:
-
     def __init__(self, db, embedding_service):
-
         self.db = db
         self.embedding_service = embedding_service
 
     async def find_matching_policy(self, text: str):
-
+        
         embedding = self.embedding_service.encode(text)
 
-        distance = Policy.embedding.cosine_distance(
-            embedding
-        )
+        distance = Policy.embedding.cosine_distance(embedding)
 
         query = (
-            select(
-                Policy,
-                distance.label("distance")
-            )
-            .where(
-                Policy.enabled.is_(True)
-            )
+            select(Policy, distance.label("distance"))
+            .where(Policy.enabled.is_(True))
             .order_by(distance)
             .limit(1)
         )
@@ -47,5 +37,5 @@ class PolicyService:
             "severity": policy.severity,
             "threshold": policy.threshold,
             "action": policy.action,
-            "similarity": similarity
+            "similarity": similarity,
         }

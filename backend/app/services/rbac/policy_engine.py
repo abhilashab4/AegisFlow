@@ -2,6 +2,7 @@ class PolicyEngine:
 
     def __init__(self):
         self.department_policies = {
+            
             "engineering": {
                 "allowed_tasks": [
                     "text-summarization",
@@ -47,12 +48,11 @@ class PolicyEngine:
         }
 
         self.task_to_model_mapping = {
-            "text-summarization": "llama-3.1-8b-instant",
-            "data-extraction": "llama-3.1-8b-instant",
-            "complex-reasoning": "llama-3.1-8b-instant",
-            "code-generation": "llama-3.1-8b-instant"
+            "text-summarization": "openai/gpt-oss-20b",
+            "data-extraction": "qwen/qwen3.6-27b",
+            "complex-reasoning": "openai/gpt-oss-120b",
+            "code-generation": "openai/gpt-oss-20b"
         }
-
     def get_rate_limit(self, department: str):
         policy = self.department_policies.get(department)
         if not policy:
