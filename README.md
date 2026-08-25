@@ -6,7 +6,7 @@
 [![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL%20%2B%20pgvector-336791.svg)](#technology-stack)
 [![Docker](https://img.shields.io/badge/deployment-Docker-2496ED.svg)](#technology-stack)
 
-[Overview](#overview) • [Features](#features) • [Getting Started](#getting-started) • [Project Structure](#project-structure) • [Request Flow](#request-flow)
+[Overview](#overview) • [Features](#features) • [Getting Started](#getting-started) • [Project Structure](#project-structure)
 
 </div>
 
@@ -156,7 +156,7 @@ frontend/
 ### Clone the repository
 
 ```bash
-git clone https://github.com/<your-org>/aegisflow.git
+git clone https://github.com/abhilashab4/AegisFlow.git
 cd aegisflow
 ```
 
